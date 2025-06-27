@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Junta Dirección - 1 Julio 2025</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body class="bg-light">
+  <div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h1 class="h3">📊 Junta Dirección – 1 de julio</h1>
+      <div id="usuarioActivo" class="text-end"></div>
+    </div>
+
+    <div id="loginContainer" class="mb-4">
+      <input type="email" id="email" placeholder="Correo" class="form-control mb-2">
+      <input type="password" id="password" placeholder="Contraseña" class="form-control mb-2">
+      <button class="btn btn-primary" onclick="login()">Iniciar sesión</button>
+    </div>
+
+    <div id="mainPanel" style="display:none;">
+      <div class="row mb-3">
+        <div class="col-md-3"><select id="filtroEtapa" class="form-select"><option value="">Todas las etapas</option></select></div>
+        <div class="col-md-3"><select id="filtroRegion" class="form-select"><option value="">Todas las regiones</option></select></div>
+        <div class="col-md-3"><select id="filtroCumplido" class="form-select"><option value="">Todos</option><option value="true">Cumplidos</option><option value="false">Pendientes</option></select></div>
+        <div class="col-md-3 text-end"><button class="btn btn-danger" onclick="logout()">Cerrar sesión</button></div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-bordered table-striped table-hover">
+          <thead class="table-dark"><tr><th>Etapa</th><th>Región</th><th>Desarrollo</th><th>Asunto</th><th>Responsable</th><th>Fecha compromiso</th><th>Observaciones</th></tr></thead>
+          <tbody id="tablaCompromisos"></tbody>
+        </table>
+      </div>
+
+      <div id="contador" class="text-end text-muted"></div>
+
+      <div class="mt-4">
+        <h5>📥 Cargar compromisos desde archivo JSON</h5>
+        <input type="file" id="jsonInput" accept=".json" class="form-control mb-2">
+        <button class="btn btn-success" onclick="cargarCompromisos()">Subir a Firestore</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-firestore.js";
+    import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.9.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyAuWx1X51ZlBwIK2MPLUnKDConwEY2j9uA",
+      authDomain: "junta-int-1jul25-v1.firebaseapp.com",
+      projectId: "junta-int-1jul25-v1",
+      storageBucket: "junta-int-1jul25-v1.appspot.com",
+      messagingSenderId: "682041011857",
+      appId: "1:682041011857:web:891190fd08647a3bce1930"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    const loginContainer = document.getElementById("loginContainer");
+    const mainPanel = document.getElementById("mainPanel");
+    const usuarioActivo = document.getElementById("usuarioActivo");
+
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        loginContainer.style.display = "none";
+        mainPanel.style.display = "block";
+        usuarioActivo.innerHTML = `<strong>👤 ${user.email}</strong>`;
+        obtenerCompromisos();
+      } else {
+        loginContainer.style.display = "block";
+        mainPanel.style.display = "none";
+        usuarioActivo.innerHTML = "";
+      }
+    });
+
+    async function login() {
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth, email, password);
+      } catch (error) {
+        Swal.fire("Error", error.message, "error");
+      }
+    }
+
+    function logout() {
+      signOut(auth);
+    }
+
+    const tabla = document.getElementById("tablaCompromisos");
+    const filtroEtapa = document.getElementById("filtroEtapa");
+    const filtroRegion = document.getElementById("filtroRegion");
+    const filtroCumplido = document.getElementById("filtroCumplido");
+    const contador = document.getElementById("contador");
+    let datos = [];
+
+    async function obtenerCompromisos() {
+      const querySnapshot = await getDocs(collection(db, "compromisos"));
+      datos = [];
+      tabla.innerHTML = "";
+      const etapas = new Set();
+      const regiones = new Set();
+
+      querySnapshot.forEach(doc => {
+        const data = doc.data();
+        datos.push(data);
+        etapas.add(data.etapa);
+        regiones.add(data.region);
+      });
+
+      llenarSelect(filtroEtapa, etapas);
+      llenarSelect(filtroRegion, regiones);
+      filtrarYMostrar();
+    }
+
+    function llenarSelect(select, valores) {
+      select.innerHTML += [...valores].sort().map(v => `<option value="${v}">${v}</option>`).join('');
+    }
+
+    function filtrarYMostrar() {
+      const etapaSel = filtroEtapa.value;
+      const regionSel = filtroRegion.value;
+      const cumplidoSel = filtroCumplido.value;
+
+      const filtrados = datos.filter(d =>
+        (!etapaSel || d.etapa === etapaSel) &&
+        (!regionSel || d.region === regionSel) &&
+        (!cumplidoSel || d.cumplido === (cumplidoSel === "true"))
+      );
+
+      tabla.innerHTML = filtrados.map(d => `
+        <tr>
+          <td>${d.etapa}</td>
+          <td>${d.region}</td>
+          <td>${d.desarrollo}</td>
+          <td>${d.asunto}</td>
+          <td>${d.responsable}</td>
+          <td>${d.fecha_compromiso}</td>
+          <td>${d.observaciones || ""}</td>
+        </tr>`).join('');
+
+      contador.textContent = `Total: ${filtrados.length} compromiso(s)`;
+    }
+
+    filtroEtapa.addEventListener("change", filtrarYMostrar);
+    filtroRegion.addEventListener("change", filtrarYMostrar);
+    filtroCumplido.addEventListener("change", filtrarYMostrar);
+
+    async function cargarCompromisos() {
+      const input = document.getElementById('jsonInput');
+      const file = input.files[0];
+      if (!file) {
+        Swal.fire("Archivo no seleccionado", "Selecciona un archivo JSON válido", "warning");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+          for (const item of data) {
+            const docRef = doc(collection(db, "compromisos"));
+            await setDoc(docRef, item);
+          }
+          Swal.fire("Éxito", "Compromisos cargados correctamente", "success");
+          obtenerCompromisos();
+        } catch (error) {
+          Swal.fire("Error", "Hubo un problema al cargar el archivo", "error");
+        }
+      };
+      reader.readAsText(file);
+    }
+  </script>
+</body>
+</html>
